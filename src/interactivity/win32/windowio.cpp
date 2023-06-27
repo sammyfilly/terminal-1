@@ -223,6 +223,13 @@ void HandleKeyEvent(const HWND hWnd,
         keyEvent.SetCharData(L'\0');
     }
 
+    if (Message == WM_CHAR)
+    {
+        char buffer[]{ "Input:  " };
+        buffer[std::size(buffer) - 1] = static_cast<char>(wParam);
+        TracyMessage(&buffer[0], std::size(buffer));
+    }
+
     const INPUT_KEY_INFO inputKeyInfo(VirtualKeyCode, ControlKeyState);
 
     // Capture telemetry on Ctrl+Shift+ C or V commands

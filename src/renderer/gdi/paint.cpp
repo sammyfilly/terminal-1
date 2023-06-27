@@ -7,6 +7,8 @@
 
 #include "../inc/unicode.hpp"
 
+#include <tracy/Tracy.hpp>
+
 #pragma hdrstop
 
 using namespace Microsoft::Console::Render;
@@ -258,6 +260,7 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
 // - S_FALSE since we do nothing.
 [[nodiscard]] HRESULT GdiEngine::Present() noexcept
 {
+    FrameMark;
     return S_FALSE;
 }
 
