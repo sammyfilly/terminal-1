@@ -4,6 +4,7 @@
 #include "precomp.h"
 #include "terminalInput.hpp"
 
+#include "../types/inc/IInputEvent.hpp"
 #include "../types/inc/utils.hpp"
 
 using namespace Microsoft::Console::VirtualTerminal;
@@ -296,9 +297,8 @@ bool TerminalInput::IsTrackingMouseInput() const noexcept
 // - delta - the amount that the scroll wheel changed (should be 0 unless button is a WM_MOUSE*WHEEL)
 // - state - the state of the mouse buttons at this moment
 // Return value:
-// - Returns an empty optional if we didn't handle the mouse event and the caller can opt to handle it in some other way.
-// - Returns a string if we successfully translated it into a VT input sequence.
-TerminalInput::OutputType TerminalInput::HandleMouse(const til::point position, const unsigned int button, const short modifierKeyState, const short delta, const MouseButtonState state)
+// - true if the event was handled and we should stop event propagation to the default window handler.
+TerminalInput::OutputType TerminalInput::HandleMouse(const til::point position, const unsigned int button, const short modifierKeyState, const short delta, const MouseButtonState state) noexcept
 {
     if (Utils::Sign(delta) != Utils::Sign(_mouseInputState.accumulatedDelta))
     {
@@ -321,8 +321,6 @@ TerminalInput::OutputType TerminalInput::HandleMouse(const til::point position, 
             OutputType out;
             if (IsTrackingMouseInput() || ShouldSendAlternateScroll(button, delta))
             {
-                // Emplacing an empty string marks the return value as "we handled it"
-                // but since it's empty it will not produce any actual output.
                 out.emplace();
             }
             return out;
@@ -335,7 +333,7 @@ TerminalInput::OutputType TerminalInput::HandleMouse(const til::point position, 
 
     if (ShouldSendAlternateScroll(button, delta))
     {
-        return _makeAlternateScrollOutput(delta);
+        return _SendAlternateScroll(delta);
     }
 
     if (IsTrackingMouseInput())
@@ -372,6 +370,7 @@ TerminalInput::OutputType TerminalInput::HandleMouse(const til::point position, 
                 _mouseInputState.lastButton = button;
             }
 
+            std::wstring sequence;
             if (_inputMode.test(Mode::Utf8MouseEncoding))
             {
                 return _GenerateUtf8Sequence(position, realButton, isHover, modifierKeyState, delta);
@@ -403,6 +402,8 @@ TerminalInput::OutputType TerminalInput::HandleMouse(const til::point position, 
 // - isHover - true if the sequence is generated in response to a mouse hover
 // - modifierKeyState - the modifier keys pressed with this button
 // - delta - the amount that the scroll wheel changed (should be 0 unless button is a WM_MOUSE*WHEEL)
+// Return value:
+// - The generated sequence. Will be empty if we couldn't generate.
 TerminalInput::OutputType TerminalInput::_GenerateDefaultSequence(const til::point position, const unsigned int button, const bool isHover, const short modifierKeyState, const short delta)
 {
     // In the default, non-extended encoding scheme, coordinates above 94 shouldn't be supported,
@@ -415,11 +416,14 @@ TerminalInput::OutputType TerminalInput::_GenerateDefaultSequence(const til::poi
         const auto encodedX = _encodeDefaultCoordinate(vtCoords.x);
         const auto encodedY = _encodeDefaultCoordinate(vtCoords.y);
 
-        StringType format{ L"\x1b[Mbxy" };
-        til::at(format, 3) = gsl::narrow_cast<wchar_t>(L' ' + _windowsButtonToXEncoding(button, isHover, modifierKeyState, delta));
-        til::at(format, 4) = gsl::narrow_cast<wchar_t>(encodedX);
-        til::at(format, 5) = gsl::narrow_cast<wchar_t>(encodedY);
-        return format;
+        using namespace std::string_view_literals;
+
+        StringType str;
+        str.append(L"\x1b[M\0\0\0"sv);
+        str[3] = gsl::narrow_cast<wchar_t>(L' ' + _windowsButtonToXEncoding(button, isHover, modifierKeyState, delta));
+        str[4] = gsl::narrow_cast<wchar_t>(encodedX);
+        str[5] = gsl::narrow_cast<wchar_t>(encodedY);
+        return str;
     }
 
     return {};
@@ -458,12 +462,15 @@ TerminalInput::OutputType TerminalInput::_GenerateUtf8Sequence(const til::point 
         const auto encodedX = _encodeDefaultCoordinate(vtCoords.x);
         const auto encodedY = _encodeDefaultCoordinate(vtCoords.y);
 
-        StringType format{ L"\x1b[Mbxy" };
+        using namespace std::string_view_literals;
+
+        StringType str;
+        str.append(L"\x1b[M\0\0\0"sv);
         // The short cast is safe because we know s_WindowsButtonToXEncoding  never returns more than xff
-        til::at(format, 3) = gsl::narrow_cast<wchar_t>(L' ' + _windowsButtonToXEncoding(button, isHover, modifierKeyState, delta));
-        til::at(format, 4) = gsl::narrow_cast<wchar_t>(encodedX);
-        til::at(format, 5) = gsl::narrow_cast<wchar_t>(encodedY);
-        return format;
+        str[3] = gsl::narrow_cast<wchar_t>(L' ' + _windowsButtonToXEncoding(button, isHover, modifierKeyState, delta));
+        str[4] = gsl::narrow_cast<wchar_t>(encodedX);
+        str[5] = gsl::narrow_cast<wchar_t>(encodedY);
+        return str;
     }
 
     return {};
@@ -481,12 +488,17 @@ TerminalInput::OutputType TerminalInput::_GenerateUtf8Sequence(const til::point 
 // - delta - the amount that the scroll wheel changed (should be 0 unless button is a WM_MOUSE*WHEEL)
 // - ppwchSequence - On success, where to put the pointer to the generated sequence
 // - pcchLength - On success, where to put the length of the generated sequence
+// Return value:
+// - true if we were able to successfully generate a sequence.
+// On success, caller is responsible for delete[]ing *ppwchSequence.
 TerminalInput::OutputType TerminalInput::_GenerateSGRSequence(const til::point position, const unsigned int button, const bool isDown, const bool isHover, const short modifierKeyState, const short delta)
 {
     // Format for SGR events is:
     // "\x1b[<%d;%d;%d;%c", xButton, x+1, y+1, fButtonDown? 'M' : 'm'
     const auto xbutton = _windowsButtonToSGREncoding(button, isHover, modifierKeyState, delta);
-    return fmt::format(FMT_COMPILE(L"\x1b[<{};{};{}{}"), xbutton, position.x + 1, position.y + 1, isDown ? L'M' : L'm');
+    StringType str;
+    fmt::format_to(std::back_inserter(str), FMT_COMPILE(L"\x1b[<{};{};{}{}"), xbutton, position.x + 1, position.y + 1, isDown ? L'M' : L'm');
+    return str;
 }
 
 // Routine Description:
@@ -510,14 +522,16 @@ bool TerminalInput::ShouldSendAlternateScroll(const unsigned int button, const s
 // - Sends a sequence to the input corresponding to cursor up / down depending on the sScrollDelta.
 // Parameters:
 // - delta: The scroll wheel delta of the input event
-TerminalInput::OutputType TerminalInput::_makeAlternateScrollOutput(const short delta) const
+// Return value:
+// True if the input sequence was sent successfully.
+TerminalInput::OutputType TerminalInput::_SendAlternateScroll(const short delta) const noexcept
 {
     if (delta > 0)
     {
-        return MakeOutput(_inputMode.test(Mode::CursorKey) ? ApplicationUpSequence : CursorUpSequence);
+        return _SendInputSequence(_inputMode.test(Mode::CursorKey) ? ApplicationUpSequence : CursorUpSequence);
     }
     else
     {
-        return MakeOutput(_inputMode.test(Mode::CursorKey) ? ApplicationDownSequence : CursorDownSequence);
+        return _SendInputSequence(_inputMode.test(Mode::CursorKey) ? ApplicationDownSequence : CursorDownSequence);
     }
 }

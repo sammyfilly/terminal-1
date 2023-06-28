@@ -1,4 +1,4 @@
-/*+
+/*++
 Copyright (c) Microsoft Corporation
 Licensed under the MIT license.
 
@@ -15,8 +15,6 @@ Author(s):
 
 #pragma once
 
-#include "../../types/inc/IInputEvent.hpp"
-
 namespace Microsoft::Console::VirtualTerminal
 {
     class TerminalInput final
@@ -24,8 +22,6 @@ namespace Microsoft::Console::VirtualTerminal
     public:
         using StringType = std::wstring;
         using OutputType = std::optional<StringType>;
-
-        static_assert(StringType{} == StringType{});
 
         struct MouseButtonState
         {
@@ -36,9 +32,9 @@ namespace Microsoft::Console::VirtualTerminal
 
         static [[nodiscard]] OutputType MakeUnhandled() noexcept;
         static [[nodiscard]] OutputType MakeOutput(const std::wstring_view& str);
-        [[nodiscard]] OutputType HandleKey(const IInputEvent* const pInEvent);
+        [[nodiscard]] OutputType HandleKey(const INPUT_RECORD& pInEvent);
         [[nodiscard]] OutputType HandleFocus(bool focused) const;
-        [[nodiscard]] OutputType HandleMouse(til::point position, unsigned int button, short modifierKeyState, short delta, MouseButtonState state);
+        [[nodiscard]] OutputType HandleMouse(til::point position, unsigned int button, short modifierKeyState, short delta, MouseButtonState state) noexcept;
 
         enum class Mode : size_t
         {
@@ -91,8 +87,8 @@ namespace Microsoft::Console::VirtualTerminal
 
         [[nodiscard]] OutputType _makeCharOutput(wchar_t ch);
         static [[nodiscard]] OutputType _makeEscapedOutput(wchar_t wch);
-        static [[nodiscard]] OutputType _makeWin32Output(const KeyEvent& key);
-        static [[nodiscard]] OutputType _searchWithModifier(const KeyEvent& keyEvent);
+        static [[nodiscard]] OutputType _makeWin32Output(const KEY_EVENT_RECORD& key);
+        static [[nodiscard]] OutputType _searchWithModifier(const KEY_EVENT_RECORD& keyEvent);
 
 #pragma region MouseInputState Management
         // These methods are defined in mouseInputState.cpp
