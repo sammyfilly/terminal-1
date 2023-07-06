@@ -63,11 +63,9 @@ Notes:
 #include "readDataCooked.hpp"
 #include "popup.h"
 
-class CommandLine
+class CommandLine final
 {
 public:
-    ~CommandLine();
-
     static CommandLine& Instance();
 
     static bool IsEditLineEmpty();
@@ -75,10 +73,7 @@ public:
     void Show();
     bool IsVisible() const noexcept;
 
-    [[nodiscard]] NTSTATUS ProcessCommandLine(COOKED_READ_DATA& cookedReadData,
-                                              _In_ WCHAR wch,
-                                              const DWORD dwKeyState);
-
+    [[nodiscard]] NTSTATUS ProcessCommandLine(COOKED_READ_DATA& cookedReadData, _In_ WCHAR wch, const DWORD dwKeyState);
     [[nodiscard]] HRESULT StartCommandNumberPopup(COOKED_READ_DATA& cookedReadData);
 
     bool HasPopup() const noexcept;
@@ -96,25 +91,6 @@ protected:
     // delete these because we don't want to accidentally get copies of the singleton
     CommandLine(const CommandLine&) = delete;
     CommandLine& operator=(const CommandLine&) = delete;
-
-    [[nodiscard]] NTSTATUS _startCommandListPopup(COOKED_READ_DATA& cookedReadData);
-    [[nodiscard]] NTSTATUS _startCopyFromCharPopup(COOKED_READ_DATA& cookedReadData);
-    [[nodiscard]] NTSTATUS _startCopyToCharPopup(COOKED_READ_DATA& cookedReadData);
-
-    void _processHistoryCycling(COOKED_READ_DATA& cookedReadData, const CommandHistory::SearchDirection searchDirection);
-    void _setPromptToOldestCommand(COOKED_READ_DATA& cookedReadData);
-    void _setPromptToNewestCommand(COOKED_READ_DATA& cookedReadData);
-    til::point _deletePromptBeforeCursor(COOKED_READ_DATA& cookedReadData) noexcept;
-    til::point _moveCursorToEndOfPrompt(COOKED_READ_DATA& cookedReadData) noexcept;
-    til::point _moveCursorToStartOfPrompt(COOKED_READ_DATA& cookedReadData) noexcept;
-    til::point _moveCursorLeftByWord(COOKED_READ_DATA& cookedReadData) noexcept;
-    til::point _moveCursorLeft(COOKED_READ_DATA& cookedReadData);
-    til::point _moveCursorRightByWord(COOKED_READ_DATA& cookedReadData) noexcept;
-    til::point _moveCursorRight(COOKED_READ_DATA& cookedReadData) noexcept;
-    void _insertCtrlZ(COOKED_READ_DATA& cookedReadData) noexcept;
-    void _deleteCommandHistory(COOKED_READ_DATA& cookedReadData) noexcept;
-    void _fillPromptWithPreviousCommandFragment(COOKED_READ_DATA& cookedReadData) noexcept;
-    til::point _cycleMatchingCommandHistoryToPrompt(COOKED_READ_DATA& cookedReadData);
 
 #ifdef UNIT_TESTING
     friend class CommandLineTests;
